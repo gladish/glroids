@@ -42,6 +42,27 @@ shotLoop:
 	return survivingShots, rocks, newExplosions
 }
 
+// CheckShipRockCollision reports whether the player's ship overlaps
+// any live rock. The ship is only vulnerable while visible --
+// Hidden() covers the brief mid-hyperspace-jump window, which already
+// has its own fate roll (see PlayerShip.resolveHyperspaceReturn) and
+// shouldn't also get picked off by a rock while it's away.
+//
+// For now this only reports the hit -- it doesn't touch rocks (the
+// rock that hit the ship is left alone) or the ship's Shots. Whatever
+// calls this owns deciding what happens to the ship.
+func CheckShipRockCollision(ship *PlayerShip, rocks []*Rock) bool {
+	if ship.Hidden() {
+		return false
+	}
+	for _, r := range rocks {
+		if circlesOverlap(ship.Pos, ship.Radius(), r.Pos, r.Radius()) {
+			return true
+		}
+	}
+	return false
+}
+
 // bangSFXFor picks the size-matched explosion sound for a rock being
 // destroyed.
 func bangSFXFor(scale RockScale) SFX {

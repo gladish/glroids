@@ -34,6 +34,14 @@ const thrustFlashTicks = 5
 // an escape hatch, not a guaranteed-safe one.
 const hyperspaceDeathChance = 0.167
 
+// shipRadius approximates the ship's outline as a circle for
+// collision purposes, same approach Rock.Radius takes for its own
+// (jagged, rotating) shape. shipPath's farthest point from center is
+// the wingtips at ~17 units out; this is pulled in from that so a
+// rock has to actually reach the hull rather than just clip the
+// corner of the ship's empty bounding circle.
+const shipRadius = 12.0
+
 // PlayerShip is the player's ship: a GameObject (for Pos/Vel/Rotation)
 // plus the local-space outline drawn at its current position/heading.
 type PlayerShip struct {
@@ -114,6 +122,11 @@ func NewPlayerShip(pos Point, settings Settings) *PlayerShip {
 // where the ship is drawn as pointing.
 func (p *PlayerShip) Forward() Vector {
 	return shipForwardLocal.Rotated(p.Rotation)
+}
+
+// Radius returns the ship's collision radius (see shipRadius).
+func (p *PlayerShip) Radius() float64 {
+	return shipRadius
 }
 
 // Update turns the ship while Left/Right is held (stopping the

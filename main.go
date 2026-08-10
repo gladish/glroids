@@ -86,6 +86,18 @@ func (g *Game) Update() error {
 	g.playerShip.Shots, g.asteroids, newExplosions = CheckShotRockCollisions(g.playerShip.Shots, g.asteroids, g.soundManager)
 	g.explosions = append(g.explosions, newExplosions...)
 
+	// Ship-rock collision: for now this is just "explode and reset at
+	// center" -- no lives/game-over yet, and the rock that hit the
+	// ship is left alone (see CheckShipRockCollision). respawn() zeros
+	// out Pos/Vel/Rotation, same reset a fatal hyperspace jump already
+	// does.
+	if CheckShipRockCollision(g.playerShip, g.asteroids) {
+		// No dedicated ship-death sound yet -- reuse the biggest bang.
+		g.soundManager.Play(SFXBangLarge)
+		g.explosions = append(g.explosions, NewShipExplosion(g.playerShip.Pos))
+		g.playerShip.respawn()
+	}
+
 	// Age out finished bursts each tick, same compact-in-place pattern
 	// as PlayerShip.updateBullets.
 	liveExplosions := g.explosions[:0]

@@ -9,18 +9,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
-// explosionSparkCount is how many sparks radiate from a single burst.
-const explosionSparkCount = 14
-
-// explosionLifetime is how long a burst lives, in seconds, before the
-// whole thing expires and gets removed -- short and punchy rather
-// than a lingering effect.
-const explosionLifetime = 0.35
-
-// explosionSpeedRange bounds how fast each spark flies outward from
-// the impact point, in world units/sec.
-var explosionSpeedRange = [2]float64{90, 260}
-
 // explosionSparkLength is how long each spark's drawn streak is, in
 // world units -- drawn as a short line trailing behind its direction
 // of travel rather than a plain dot, for a "sparkle" look consistent
@@ -29,6 +17,35 @@ const explosionSparkLength = 6.0
 
 // explosionStrokeWidth is how thick each spark's streak is drawn.
 const explosionStrokeWidth = 2.0
+
+// burstConfig is the tunable shape of a spark burst: how many sparks,
+// how fast they fly, and how long the whole thing lasts. NewExplosion
+// and NewShipExplosion are both just newBurst with different numbers
+// -- a rock pop and the player's own death are the same kind of
+// effect, scaled up for the bigger, more dramatic event.
+type burstConfig struct {
+	sparkCount         int
+	speedMin, speedMax float64
+	lifetime           float64
+}
+
+// rockHitBurst is a small, quick pop -- the effect for an ordinary
+// rock getting shot.
+var rockHitBurst = burstConfig{
+	sparkCount: 14,
+	speedMin:   90,
+	speedMax:   260,
+	lifetime:   0.35,
+}
+
+// shipDeathBurst is bigger and lasts longer than a rock pop, since
+// losing the ship is a much bigger moment than popping a rock.
+var shipDeathBurst = burstConfig{
+	sparkCount: 26,
+	speedMin:   60,
+	speedMax:   240,
+	lifetime:   0.6,
+}
 
 // spark is one radiating fragment of an explosion: a straight-line
 // path traveling outward at a fixed velocity from the moment of
@@ -52,15 +69,27 @@ type Explosion struct {
 	lifetime float64
 }
 
-// NewExplosion spawns a burst of explosionSparkCount sparks at pos,
-// each flying outward in its own random direction at a random speed
-// within explosionSpeedRange -- so every hit's burst looks a little
-// different rather than a stamped-out animation.
+// NewExplosion spawns the standard rock-hit spark burst at pos, each
+// spark flying outward in its own random direction/speed so every
+// hit's burst looks a little different rather than a stamped-out
+// animation.
 func NewExplosion(pos Point) *Explosion {
-	sparks := make([]spark, explosionSparkCount)
+	return newBurst(pos, rockHitBurst)
+}
+
+// NewShipExplosion spawns the bigger, longer-lived burst used when
+// the player's ship is destroyed -- same effect as NewExplosion,
+// scaled up via shipDeathBurst rather than a separate animation.
+func NewShipExplosion(pos Point) *Explosion {
+	return newBurst(pos, shipDeathBurst)
+}
+
+// newBurst builds an Explosion of cfg's shape at pos.
+func newBurst(pos Point, cfg burstConfig) *Explosion {
+	sparks := make([]spark, cfg.sparkCount)
 	for i := range sparks {
 		angle := rand.Float64() * 2 * math.Pi
-		speed := explosionSpeedRange[0] + rand.Float64()*(explosionSpeedRange[1]-explosionSpeedRange[0])
+		speed := cfg.speedMin + rand.Float64()*(cfg.speedMax-cfg.speedMin)
 		sparks[i] = spark{
 			Pos: pos,
 			Vel: FromAngle(angle).Scale(speed),
@@ -69,7 +98,7 @@ func NewExplosion(pos Point) *Explosion {
 	return &Explosion{
 		GameObject: GameObject{Pos: pos},
 		sparks:     sparks,
-		lifetime:   explosionLifetime,
+		lifetime:   cfg.lifetime,
 	}
 }
 

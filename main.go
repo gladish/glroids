@@ -49,6 +49,7 @@ type Game struct {
 
 	lives int // remaining lives, including the ship currently in play
 	wave  int // current wave number, starting at 1
+	score int // current score -- see rockScore/extraLifeScore
 
 	// waveRockCount is how many rocks the current wave started with
 	// -- drives the heartbeat's tempo ramp (see currentBeatInterval).
@@ -132,9 +133,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		drawCenteredText(screen, "PRESS ENTER TO PLAY", 340, promptTextScale, color.White)
 	case StatePlaying, StateWaveClear, StatePlayerDying:
 		drawLives(screen, g.playerShip, g.lives)
+		drawCenteredText(screen, fmt.Sprintf("SCORE %d", g.score), 30, hudTextScale, color.White)
 		drawText(screen, fmt.Sprintf("WAVE %d", g.wave), screenWidth-170, 30, hudTextScale, color.White)
 	case StateGameOver:
 		drawLives(screen, g.playerShip, g.lives)
+		drawCenteredText(screen, fmt.Sprintf("SCORE %d", g.score), 30, hudTextScale, color.White)
 		drawText(screen, fmt.Sprintf("WAVE %d", g.wave), screenWidth-170, 30, hudTextScale, color.White)
 		drawCenteredText(screen, "GAME OVER", 300, titleTextScale, color.White)
 		drawCenteredText(screen, "PRESS ENTER TO CONTINUE", 380, promptTextScale, color.White)

@@ -44,7 +44,7 @@ const startingLives = 3
 // maxWaveAsteroids caps how many Large rocks a wave can start with,
 // so the field doesn't grow forever as waves climb -- mirrors the
 // arcade original's plateau (see asteroidsForWave).
-const maxWaveAsteroids = 11
+const maxWaveAsteroids = 15
 
 // waveClearPause is how long the field sits empty -- ship still
 // flying, nothing left to shoot -- before the next wave spawns.
@@ -62,11 +62,16 @@ const playerDeathPause = 1.5 // seconds
 const beatIntervalMax = 1.0  // seconds, at wave start
 const beatIntervalMin = 0.25 // seconds, with the wave almost cleared
 
+// extraLifeScore is how many points earn the player a bonus life --
+// every multiple of this threshold the score crosses grants one (see
+// awardExtraLives).
+const extraLifeScore = 10000
+
 // asteroidsForWave returns how many Large rocks wave should start
-// with: startingAsteroids on wave 1, ramping up by one per wave until
+// with: startingAsteroids on wave 1, ramping up by two per wave until
 // maxWaveAsteroids.
 func asteroidsForWave(wave int) int {
-	n := startingAsteroids + (wave - 1)
+	n := startingAsteroids + ((wave - 1) * 2)
 	if n > maxWaveAsteroids {
 		n = maxWaveAsteroids
 	}
@@ -79,6 +84,7 @@ func asteroidsForWave(wave int) int {
 func (g *Game) startGame() {
 	g.lives = startingLives
 	g.wave = 1
+	g.score = 0
 	g.playerShip.respawn()
 	g.playerShip.Alive = true
 	g.playerShip.grantInvulnerability()
@@ -111,6 +117,21 @@ func (g *Game) killPlayer() {
 	g.playerShip.Alive = false
 	g.state = StatePlayerDying
 	g.stateTimer = playerDeathPause
+}
+
+// awardExtraLives grants one life for every multiple of
+// extraLifeScore the player's score just crossed -- prevScore and
+// g.score (the score before and after this tick's gain) bracket the
+// jump, so a single big gain (e.g. two rocks popped in one tick)
+// can't skip past a threshold without awarding it.
+func (g *Game) awardExtraLives(prevScore int) {
+	before := prevScore / extraLifeScore
+	after := g.score / extraLifeScore
+	if after <= before {
+		return
+	}
+	g.lives += after - before
+	g.soundManager.Play(SFXExtraShip)
 }
 
 // checkHyperspaceDeath routes a fatal hyperspace return through
@@ -249,8 +270,14 @@ func (g *Game) updatePlaying(dt float64) {
 	}
 
 	var newExplosions []*Explosion
-	g.playerShip.Shots, g.asteroids, newExplosions = CheckShotRockCollisions(g.playerShip.Shots, g.asteroids, g.soundManager)
+	var scoreGained int
+	g.playerShip.Shots, g.asteroids, newExplosions, scoreGained = CheckShotRockCollisions(g.playerShip.Shots, g.asteroids, g.soundManager)
 	g.explosions = append(g.explosions, newExplosions...)
+	if scoreGained > 0 {
+		prevScore := g.score
+		g.score += scoreGained
+		g.awardExtraLives(prevScore)
+	}
 
 	if CheckShipRockCollision(g.playerShip, g.asteroids) {
 		g.killPlayer()

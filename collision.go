@@ -1,22 +1,33 @@
 package main
 
+// rockScore awards points for destroying a rock, matching the arcade
+// original's inverse relationship between size and points -- smaller,
+// faster, harder-to-hit rocks are worth more.
+var rockScore = map[RockScale]int{
+	RockScaleLarge:  20,
+	RockScaleMedium: 50,
+	RockScaleSmall:  100,
+}
+
 // CheckShotRockCollisions tests every in-flight player shot against
 // every rock for a circle-circle overlap. On a hit: the shot is
 // consumed, the rock is destroyed and replaced by SplitRock's
 // children (nothing, if it was already Small), the size-matched bang
 // sound plays -- same sounds the debug keys in main.go trigger
-// manually -- and a spark burst spawns at the shot's position (the
-// point of impact). A shot stops at its first hit rather than
-// piercing through to a second rock the same tick; separate shots can
-// each still score their own hit in one tick.
+// manually -- a spark burst spawns at the shot's position (the point
+// of impact), and the rock's size-matched value (see rockScore) is
+// added to the score returned. A shot stops at its first hit rather
+// than piercing through to a second rock the same tick; separate
+// shots can each still score their own hit in one tick.
 //
 // Returns the surviving shots, the rock field with destroyed rocks
-// removed and any split children appended, and any new Explosions
-// spawned this call -- the caller owns adding those to whatever slice
-// Game.Update/Draw drives.
-func CheckShotRockCollisions(shots []*Shot, rocks []*Rock, sm *SoundManager) ([]*Shot, []*Rock, []*Explosion) {
+// removed and any split children appended, any new Explosions spawned
+// this call, and the total score earned -- the caller owns adding
+// those to whatever slice/counter Game.Update/Draw drives.
+func CheckShotRockCollisions(shots []*Shot, rocks []*Rock, sm *SoundManager) ([]*Shot, []*Rock, []*Explosion, int) {
 	survivingShots := shots[:0]
 	var newExplosions []*Explosion
+	var scoreGained int
 
 shotLoop:
 	for _, s := range shots {
@@ -27,6 +38,7 @@ shotLoop:
 
 			sm.Play(bangSFXFor(r.Scale))
 			newExplosions = append(newExplosions, NewExplosion(s.Pos))
+			scoreGained += rockScore[r.Scale]
 
 			// Swap-remove the hit rock, then append whatever it split
 			// into (nothing, for a Small rock).
@@ -39,7 +51,7 @@ shotLoop:
 		survivingShots = append(survivingShots, s)
 	}
 
-	return survivingShots, rocks, newExplosions
+	return survivingShots, rocks, newExplosions, scoreGained
 }
 
 // CheckShipRockCollision reports whether the player's ship overlaps

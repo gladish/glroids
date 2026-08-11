@@ -54,6 +54,14 @@ type Game struct {
 	// waveRockCount is how many rocks the current wave started with
 	// -- drives the heartbeat's tempo ramp (see currentBeatInterval).
 	waveRockCount int
+
+	// saucer is the current enemy saucer, or nil when none is on
+	// screen -- only one is ever live at a time (see
+	// updateSaucerSpawn). saucerTimer counts down to the next one
+	// while saucer is nil; it's meaningless while one is already
+	// present.
+	saucer      *Saucer
+	saucerTimer float64
 }
 
 func NewGame() *Game {
@@ -66,8 +74,9 @@ func NewGame() *Game {
 		playerShip:   NewPlayerShip(shipStart, settings),
 		// A decorative field, drifting behind the attract screen
 		// until startGame replaces it with wave 1's real field.
-		asteroids: spawnAsteroidField(startingAsteroids, shipStart),
-		state:     StateAttract,
+		asteroids:   spawnAsteroidField(startingAsteroids, shipStart),
+		state:       StateAttract,
+		saucerTimer: randomSaucerSpawnDelay(),
 	}
 }
 
@@ -118,6 +127,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	for _, a := range g.asteroids {
 		a.Draw(screen)
+	}
+	if g.saucer != nil {
+		g.saucer.Draw(screen)
 	}
 	// No ship on the attract screen -- it hasn't spawned yet.
 	if g.state != StateAttract {

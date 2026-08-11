@@ -91,6 +91,88 @@ func bangSFXFor(scale RockScale) SFX {
 	}
 }
 
+// bangSFXForSaucer picks the size-matched explosion sound for a
+// saucer being destroyed -- same size-to-sound mapping as
+// bangSFXFor's Large/Small ends, there being no Medium saucer.
+func bangSFXForSaucer(kind SaucerKind) SFX {
+	if kind == SaucerLarge {
+		return SFXBangLarge
+	}
+	return SFXBangSmall
+}
+
+// CheckShotSaucerCollision tests every in-flight player shot against
+// the saucer (if any is present -- saucer may be nil) for a
+// circle-circle overlap. On the first hit, that shot is consumed and
+// hit/hitPos report the collision; any remaining shots are returned
+// untouched. Doesn't touch the saucer itself, play a sound, or spawn
+// an explosion -- the caller owns that plus scoring (see
+// Game.updatePlaying), same division of responsibility
+// CheckShotRockCollisions has with its own caller.
+func CheckShotSaucerCollision(shots []*Shot, saucer *Saucer) (survivingShots []*Shot, hit bool, hitPos Point) {
+	if saucer == nil {
+		return shots, false, Point{}
+	}
+
+	survivingShots = shots[:0]
+	for _, s := range shots {
+		if !hit && circlesOverlap(s.Pos, shotRadius, saucer.Pos, saucer.Radius()) {
+			hit = true
+			hitPos = s.Pos
+			continue
+		}
+		survivingShots = append(survivingShots, s)
+	}
+	return survivingShots, hit, hitPos
+}
+
+// CheckShipSaucerCollision reports whether the player's ship overlaps
+// the saucer (if any is present). Same visibility/invulnerability
+// rules as CheckShipRockCollision, and the same "report only, don't
+// touch anything" contract -- the caller (see Game.updateSaucer) owns
+// deciding what happens to the ship.
+func CheckShipSaucerCollision(ship *PlayerShip, saucer *Saucer) bool {
+	if saucer == nil || ship.Hidden() || ship.Invulnerable() {
+		return false
+	}
+	return circlesOverlap(ship.Pos, ship.Radius(), saucer.Pos, saucer.Radius())
+}
+
+// CheckRockSaucerCollision reports whether any rock overlaps the
+// saucer (if any is present). In the original arcade a saucer that
+// collides with an asteroid is destroyed by it -- the rock is left
+// alone, mirroring how a ship-rock collision doesn't touch the rock
+// either.
+func CheckRockSaucerCollision(rocks []*Rock, saucer *Saucer) bool {
+	if saucer == nil {
+		return false
+	}
+	for _, r := range rocks {
+		if circlesOverlap(r.Pos, r.Radius(), saucer.Pos, saucer.Radius()) {
+			return true
+		}
+	}
+	return false
+}
+
+// CheckShotShipCollision reports whether any of shots overlaps the
+// player's ship -- used for the saucer's own shots, which are the
+// only shots in this game that can hit the player (the player has no
+// equivalent hazard from its own). Same visibility/invulnerability
+// rules as CheckShipRockCollision. Doesn't consume the shot or touch
+// ship state -- the caller (see Game.updateSaucer) owns that.
+func CheckShotShipCollision(shots []*Shot, ship *PlayerShip) bool {
+	if ship.Hidden() || ship.Invulnerable() {
+		return false
+	}
+	for _, s := range shots {
+		if circlesOverlap(s.Pos, shotRadius, ship.Pos, ship.Radius()) {
+			return true
+		}
+	}
+	return false
+}
+
 // circlesOverlap reports whether two circles, given by center and
 // radius, intersect.
 func circlesOverlap(aPos Point, aRadius float64, bPos Point, bRadius float64) bool {

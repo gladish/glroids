@@ -1,6 +1,9 @@
 package main
 
 import (
+	"math"
+	"math/rand"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
@@ -67,6 +70,92 @@ const beatIntervalMin = 0.25 // seconds, with the wave almost cleared
 // awardExtraLives).
 const extraLifeScore = 10000
 
+// --- Saucer spawn/aim policy ---
+//
+// Saucer itself (saucer.go) only knows how to move and how to fire in
+// a direction it's handed -- everything about *when* one appears,
+// *which kind*, and *how well it aims* is policy that depends on the
+// player's score, so it lives here alongside the rest of Game's
+// decision-making rather than in the entity. Consulted from the
+// original arcade's disassembly/RAM map (see saucer.go's doc comment
+// for links) rather than guessed at.
+
+// saucerSpawnIntervalMin/Max bound how long the game waits, once no
+// saucer is present, before the next one appears.
+const saucerSpawnIntervalMin = 12.0
+const saucerSpawnIntervalMax = 22.0
+
+// smallSaucerScore is the score after which small saucers start
+// appearing at all -- 10,000 in the original arcade. Below it, every
+// saucer spawned is Large.
+const smallSaucerScore = 10000
+
+// smallSaucerBaseChance/MaxChance/ChanceRamp shape how likely a
+// newly-spawned saucer is Small once smallSaucerScore is reached: it
+// starts at smallSaucerBaseChance and climbs toward smallSaucerMaxChance
+// as score increases, gaining 100% chance per smallSaucerChanceRamp
+// points -- the original's small saucers "appear more frequently" as
+// the game progresses, without documenting an exact formula for it,
+// so this is a reasonable ramp rather than a ROM-accurate one.
+const smallSaucerBaseChance = 0.3
+const smallSaucerMaxChance = 0.8
+const smallSaucerChanceRamp = 20000
+
+// smallSaucerAccurateScore is the score after which the small
+// saucer's aim sharpens up -- 35,000 in the original arcade.
+const smallSaucerAccurateScore = 35000
+
+// smallSaucerAimJitterWide/Tight bound how far off-target (in
+// radians) the small saucer's shot can land before/after
+// smallSaucerAccurateScore. The original never lets even an
+// "accurate" small saucer aim perfectly, and doesn't lead the
+// player's movement at all -- so this jitters the direction straight
+// at the player's current position rather than converging to a
+// zero-error aimbot.
+const smallSaucerAimJitterWide = 0.35  // ~20 degrees
+const smallSaucerAimJitterTight = 0.08 // ~4.5 degrees
+
+// randomSaucerSpawnDelay picks how long to wait before the next
+// saucer, once none is present (see Game.despawnSaucer).
+func randomSaucerSpawnDelay() float64 {
+	return saucerSpawnIntervalMin + rand.Float64()*(saucerSpawnIntervalMax-saucerSpawnIntervalMin)
+}
+
+// smallSaucerChance returns the odds (0..1) that the next saucer
+// spawned should be Small rather than Large, given the player's
+// current score (see smallSaucerBaseChance/MaxChance/ChanceRamp).
+func smallSaucerChance(score int) float64 {
+	if score < smallSaucerScore {
+		return 0
+	}
+	chance := smallSaucerBaseChance + float64(score-smallSaucerScore)/smallSaucerChanceRamp
+	if chance > smallSaucerMaxChance {
+		chance = smallSaucerMaxChance
+	}
+	return chance
+}
+
+// saucerAimDirection returns the direction a saucer at pos should
+// fire in to hit target (the player's ship). Large saucers ignore the
+// player entirely and fire in a random direction; Small saucers aim
+// at the player's current position, jittered by an angle that
+// narrows once score passes smallSaucerAccurateScore (see
+// smallSaucerAimJitterWide/Tight) -- it aims where the player is
+// *right now*, same as the original, not where they're headed.
+func saucerAimDirection(kind SaucerKind, pos, target Point, score int) Vector {
+	if kind == SaucerLarge {
+		return FromAngle(rand.Float64() * 2 * math.Pi)
+	}
+
+	base := math.Atan2(target.Y-pos.Y, target.X-pos.X)
+	jitter := smallSaucerAimJitterWide
+	if score >= smallSaucerAccurateScore {
+		jitter = smallSaucerAimJitterTight
+	}
+	base += (rand.Float64()*2 - 1) * jitter
+	return FromAngle(base)
+}
+
 // asteroidsForWave returns how many Large rocks wave should start
 // with: startingAsteroids on wave 1, ramping up by two per wave until
 // maxWaveAsteroids.
@@ -91,6 +180,8 @@ func (g *Game) startGame() {
 	g.explosions = nil
 	g.beatToggle = false
 	g.beatTimer = 0
+	g.saucer = nil
+	g.saucerTimer = randomSaucerSpawnDelay()
 	g.startWave()
 	g.state = StatePlaying
 }
@@ -102,6 +193,88 @@ func (g *Game) startGame() {
 func (g *Game) startWave() {
 	g.waveRockCount = asteroidsForWave(g.wave)
 	g.asteroids = spawnAsteroidField(g.waveRockCount, g.playerShip.Pos)
+}
+
+// despawnSaucer removes the current saucer -- however it went
+// (destroyed, escaped off-screen, or the round ending under it) --
+// and restarts the countdown to the next one.
+func (g *Game) despawnSaucer() {
+	g.saucer = nil
+	g.saucerTimer = randomSaucerSpawnDelay()
+}
+
+// updateSaucerSpawn counts down to the next saucer while none is
+// present, and spawns one (see smallSaucerChance for the Large/Small
+// pick) once the timer runs out. No-ops while a saucer is already on
+// screen -- only one is ever live at a time, same as the original.
+func (g *Game) updateSaucerSpawn(dt float64) {
+	if g.saucer != nil {
+		return
+	}
+	g.saucerTimer -= dt
+	if g.saucerTimer > 0 {
+		return
+	}
+	kind := SaucerLarge
+	if rand.Float64() < smallSaucerChance(g.score) {
+		kind = SaucerSmall
+	}
+	g.saucer = NewSaucer(kind, g.playerShip.Pos)
+}
+
+// updateSaucer drives the current saucer, if any: movement, firing
+// (Game picks the aim direction -- see saucerAimDirection -- since
+// that needs the player's position and score, which Saucer itself
+// doesn't know), and every kind of collision it's party to except
+// the player's own shots hitting it (that's handled in updatePlaying,
+// alongside the player's shots-vs-rocks collision it's a sibling of).
+// Only called while StatePlaying -- a saucer simply freezes in place,
+// unfired-upon, through any other state, and resumes once play does.
+func (g *Game) updateSaucer(dt float64) {
+	if g.saucer == nil {
+		return
+	}
+
+	g.saucer.Update(dt)
+
+	if g.saucer.Escaped() {
+		g.despawnSaucer()
+		return
+	}
+
+	if g.saucer.ReadyToFire {
+		dir := saucerAimDirection(g.saucer.Kind, g.saucer.Pos, g.playerShip.Pos, g.score)
+		g.saucer.fire(dir)
+		// No dedicated saucer-fire sound yet -- reuse the player's
+		// own fire cue, same "no dedicated sound, reuse the closest
+		// existing one" call killPlayer already makes for a
+		// ship-death bang.
+		g.soundManager.Play(SFXFire)
+	}
+
+	// The saucer's own shots can pop rocks too, same rules as the
+	// player's shots -- just with no score attached (only the player
+	// earns points).
+	var saucerShotExplosions []*Explosion
+	g.saucer.Shots, g.asteroids, saucerShotExplosions, _ = CheckShotRockCollisions(g.saucer.Shots, g.asteroids, g.soundManager)
+	g.explosions = append(g.explosions, saucerShotExplosions...)
+
+	// A rock colliding with the saucer destroys it -- no score, since
+	// the player didn't do it -- same as the original arcade.
+	if CheckRockSaucerCollision(g.asteroids, g.saucer) {
+		g.soundManager.Play(bangSFXForSaucer(g.saucer.Kind))
+		g.explosions = append(g.explosions, NewExplosion(g.saucer.Pos))
+		g.despawnSaucer()
+		return
+	}
+
+	// Either the saucer's shots or its body killing the player is
+	// handled identically to a rock doing it -- the saucer itself
+	// isn't touched by a body collision, mirroring how
+	// CheckShipRockCollision leaves the rock alone too.
+	if CheckShotShipCollision(g.saucer.Shots, g.playerShip) || CheckShipSaucerCollision(g.playerShip, g.saucer) {
+		g.killPlayer()
+	}
 }
 
 // killPlayer marks the ship destroyed, spawns its death burst, and
@@ -170,13 +343,27 @@ func (g *Game) updateExplosions(dt float64) {
 }
 
 // updateLoops starts/stops the thrust hum to match the ship's own
-// Thrusting state -- driven off the ship rather than polling the key
-// again here, so sound and motion can never disagree.
+// Thrusting state, and the size-matched saucer hum to match whether
+// (and which kind of) saucer is currently present -- both driven off
+// existing state rather than polling anything again here, so sound
+// and what's on screen can never disagree.
 func (g *Game) updateLoops() {
 	if g.playerShip.Thrusting {
 		g.soundManager.PlayLoop(SFXThrustLoop)
 	} else {
 		g.soundManager.StopLoop(SFXThrustLoop)
+	}
+
+	switch {
+	case g.saucer == nil:
+		g.soundManager.StopLoop(SFXSaucerBigLoop)
+		g.soundManager.StopLoop(SFXSaucerSmallLoop)
+	case g.saucer.Kind == SaucerLarge:
+		g.soundManager.PlayLoop(SFXSaucerBigLoop)
+		g.soundManager.StopLoop(SFXSaucerSmallLoop)
+	default:
+		g.soundManager.PlayLoop(SFXSaucerSmallLoop)
+		g.soundManager.StopLoop(SFXSaucerBigLoop)
 	}
 }
 
@@ -268,11 +455,35 @@ func (g *Game) updatePlaying(dt float64) {
 	for _, a := range g.asteroids {
 		a.Update(dt)
 	}
+	g.updateSaucerSpawn(dt)
+	g.updateSaucer(dt)
+	if g.state != StatePlaying {
+		// The saucer's shots or its body just killed the player --
+		// same reasoning as the checkHyperspaceDeath guard above:
+		// nothing else this tick belongs to a Playing update.
+		return
+	}
 
 	var newExplosions []*Explosion
 	var scoreGained int
 	g.playerShip.Shots, g.asteroids, newExplosions, scoreGained = CheckShotRockCollisions(g.playerShip.Shots, g.asteroids, g.soundManager)
 	g.explosions = append(g.explosions, newExplosions...)
+
+	// Player shots vs the saucer, if one's currently around --
+	// sibling of the shots-vs-rocks check just above, kept separate
+	// since a saucer isn't a slice of things to range over.
+	if g.saucer != nil {
+		var hit bool
+		var hitPos Point
+		g.playerShip.Shots, hit, hitPos = CheckShotSaucerCollision(g.playerShip.Shots, g.saucer)
+		if hit {
+			g.soundManager.Play(bangSFXForSaucer(g.saucer.Kind))
+			g.explosions = append(g.explosions, NewExplosion(hitPos))
+			scoreGained += saucerScore[g.saucer.Kind]
+			g.despawnSaucer()
+		}
+	}
+
 	if scoreGained > 0 {
 		prevScore := g.score
 		g.score += scoreGained
@@ -358,6 +569,9 @@ func (g *Game) updateGameOver(dt float64) {
 	g.updateExplosions(dt)
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 		g.asteroids = spawnAsteroidField(startingAsteroids, g.playerShip.Pos)
+		g.saucer = nil
+		g.soundManager.StopLoop(SFXSaucerBigLoop)
+		g.soundManager.StopLoop(SFXSaucerSmallLoop)
 		g.state = StateAttract
 	}
 }

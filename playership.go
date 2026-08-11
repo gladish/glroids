@@ -34,6 +34,16 @@ const thrustFlashTicks = 5
 // an escape hatch, not a guaranteed-safe one.
 const hyperspaceDeathChance = 0.167
 
+// respawnInvulnDuration is how long a freshly respawned ship is safe
+// from rock collisions -- long enough to get clear of whatever's
+// sitting on the spawn point before it's vulnerable again.
+const respawnInvulnDuration = 2 * time.Second
+
+// invulnBlinkTicks is how many ticks the ship stays visible (or
+// hidden) between toggles while invulnerable -- same flicker trick as
+// thrustFlashTicks, just its own tempo.
+const invulnBlinkTicks = 6
+
 // shipRadius approximates the ship's outline as a circle for
 // collision purposes, same approach Rock.Radius takes for its own
 // (jagged, rotating) shape. shipPath's farthest point from center is
@@ -67,6 +77,12 @@ type PlayerShip struct {
 	Hyperspaced         bool // true only on the tick a hyperspace jump was initiated
 	HyperspaceDestroyed bool // true only on the tick a hyperspace return proved fatal
 
+	// Alive is false while the ship is destroyed and waiting on Game
+	// to respawn it (see Game.killPlayer/updatePlayerDying) -- Draw
+	// skips a dead ship's body/flame the same way it already skips a
+	// hidden (mid-hyperspace) one.
+	Alive bool
+
 	Keys                  KeyBindings   // which keyboard keys drive turning/thrust/fire
 	RespawnHiddenDuration time.Duration // how long the ship is hidden/in-transit during a hyperspace jump
 
@@ -83,6 +99,14 @@ type PlayerShip struct {
 	// "vanish, travel, then arrive safely or not" rather than being
 	// decided before the ship even leaves.
 	hyperspacePending bool
+
+	// invulnSecondsLeft counts down from respawnInvulnDuration once a
+	// fresh respawn grants it (see grantInvulnerability); the ship is
+	// safe from rock collisions (see Invulnerable) and flickers (see
+	// blinkVisible) while it's above zero. Same seconds-not-Duration
+	// reasoning as hiddenSecondsLeft.
+	invulnSecondsLeft float64
+	invulnTicks       int // ticks elapsed while invulnerable, drives the flicker
 }
 
 func NewPlayerShip(pos Point, settings Settings) *PlayerShip {
@@ -110,9 +134,18 @@ func NewPlayerShip(pos Point, settings Settings) *PlayerShip {
 		GameObject:            GameObject{Pos: pos},
 		Path:                  shipPath,
 		ThrustPath:            thrustFlamePath,
+		Alive:                 true,
 		Shots:                 make([]*Shot, 0, maxActiveShots),
 		Keys:                  settings.Keys,
 		RespawnHiddenDuration: settings.RespawnHiddenDuration,
+		// Set up front (rather than left nil until the next Update),
+		// same reasoning as Rock.WorldPath -- Draw can run before this
+		// ship's first Update tick (e.g. the frame right after
+		// Game.startGame flips state to Playing but before this
+		// ship's own Update has run), and an empty WorldPath crashes
+		// strokeClosedPath.
+		WorldPath:       TransformPath(shipPath, 0, pos),
+		WorldThrustPath: TransformPath(thrustFlamePath, 0, pos),
 	}
 }
 
@@ -168,6 +201,14 @@ func (p *PlayerShip) Update(dt float64) {
 		}
 	}
 
+	if p.invulnSecondsLeft > 0 {
+		p.invulnSecondsLeft -= dt
+		if p.invulnSecondsLeft < 0 {
+			p.invulnSecondsLeft = 0
+		}
+		p.invulnTicks++
+	}
+
 	// Rotate/translate once per tick, after Pos and Rotation are
 	// final for this tick, so Draw (and later collision checks) just
 	// read the result instead of redoing this math.
@@ -202,14 +243,16 @@ func (p *PlayerShip) startHyperspaceJump() {
 
 // resolveHyperspaceReturn rolls hyperspaceDeathChance and either
 // relocates the ship to a random point on screen (keeping its current
-// velocity, so momentum carries through the jump) or, on a hit,
-// destroys it instead via respawn. Called by Update once
-// hiddenSecondsLeft reaches zero -- the fate of a jump is decided on
-// arrival, not on departure.
+// velocity, so momentum carries through the jump) or, on a hit, flags
+// HyperspaceDestroyed and leaves the ship where it vanished. This
+// method doesn't reset the ship itself on a fatal roll -- Game picks
+// the flag up (see Game.checkHyperspaceDeath) and routes it through
+// the same death/respawn handling as a rock collision. Called by
+// Update once hiddenSecondsLeft reaches zero -- the fate of a jump is
+// decided on arrival, not on departure.
 func (p *PlayerShip) resolveHyperspaceReturn() {
 	if rand.Float64() < hyperspaceDeathChance {
 		p.HyperspaceDestroyed = true
-		p.respawn()
 		return
 	}
 
@@ -217,13 +260,36 @@ func (p *PlayerShip) resolveHyperspaceReturn() {
 }
 
 // respawn resets the ship to screen center, at rest and pointed
-// straight up. There's no lives/game-over system yet, so a fatal
-// hyperspace return just means an immediate, clean reset for now.
+// straight up. Called by Game once it's decided the ship gets to come
+// back -- after the death pause following a rock collision or a fatal
+// hyperspace jump (see Game.updatePlayerDying), or at the start of a
+// fresh game (see Game.startGame).
 func (p *PlayerShip) respawn() {
 	p.Pos = Point{X: screenWidth / 2, Y: screenHeight / 2}
 	p.Vel = Vector{}
 	p.Rotation = 0
 	p.RotVel = 0
+
+	// Recomputed immediately rather than left for the next Update
+	// tick -- Game flips state (and thus what Draw shows) to Playing
+	// in the same tick respawn is called from, before this ship's own
+	// Update runs again, so Draw needs an up-to-date WorldPath at the
+	// new Pos right away (see NewPlayerShip for the same reasoning).
+	p.WorldPath = TransformPath(p.Path, p.Rotation, p.Pos)
+	p.WorldThrustPath = TransformPath(p.ThrustPath, p.Rotation, p.Pos)
+}
+
+// grantInvulnerability starts (or restarts) the ship's post-respawn
+// safe window -- see invulnSecondsLeft.
+func (p *PlayerShip) grantInvulnerability() {
+	p.invulnSecondsLeft = respawnInvulnDuration.Seconds()
+	p.invulnTicks = 0
+}
+
+// Invulnerable reports whether the ship is currently safe from rock
+// collisions after a fresh respawn (see grantInvulnerability).
+func (p *PlayerShip) Invulnerable() bool {
+	return p.invulnSecondsLeft > 0
 }
 
 // Hidden reports whether the ship is mid-hyperspace-jump (in transit,
@@ -252,10 +318,26 @@ func (p *PlayerShip) flameVisible() bool {
 	return p.Thrusting && (p.thrustTicks/thrustFlashTicks)%2 == 0
 }
 
+// blinkVisible reports whether the ship's body/flame should be drawn
+// this tick -- always true unless Invulnerable(), in which case it
+// flickers the same way the thrust flame does (see flameVisible), so
+// a freshly respawned ship visibly reads as "still safe" until the
+// window ends.
+func (p *PlayerShip) blinkVisible() bool {
+	if !p.Invulnerable() {
+		return true
+	}
+	return (p.invulnTicks/invulnBlinkTicks)%2 == 0
+}
+
 // Draw strokes the ship's outline, plus the thrust flame while it's
-// flickering on, using the world-space points Update already computed.
+// flickering on, using the world-space points Update already
+// computed. A dead ship (mid-death-pause, see Alive) or one in
+// hyperspace transit (see Hidden) draws no body at all; an
+// invulnerable one flickers (see blinkVisible). Shots draw regardless
+// -- they're independent of whatever state the ship itself is in.
 func (p *PlayerShip) Draw(screen *ebiten.Image) {
-	if !p.Hidden() {
+	if p.Alive && !p.Hidden() && p.blinkVisible() {
 		strokeClosedPath(screen, p.WorldPath)
 		if p.flameVisible() {
 			strokeClosedPath(screen, p.WorldThrustPath)

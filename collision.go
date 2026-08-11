@@ -43,16 +43,19 @@ shotLoop:
 }
 
 // CheckShipRockCollision reports whether the player's ship overlaps
-// any live rock. The ship is only vulnerable while visible --
-// Hidden() covers the brief mid-hyperspace-jump window, which already
-// has its own fate roll (see PlayerShip.resolveHyperspaceReturn) and
-// shouldn't also get picked off by a rock while it's away.
+// any live rock. The ship is only vulnerable while visible and out of
+// its post-respawn grace window -- Hidden() covers the brief
+// mid-hyperspace-jump window, which already has its own fate roll
+// (see PlayerShip.resolveHyperspaceReturn) and shouldn't also get
+// picked off by a rock while it's away, and Invulnerable() covers the
+// window right after a respawn where a rock might be sitting on the
+// spawn point.
 //
-// For now this only reports the hit -- it doesn't touch rocks (the
-// rock that hit the ship is left alone) or the ship's Shots. Whatever
-// calls this owns deciding what happens to the ship.
+// This only reports the hit -- it doesn't touch rocks (the rock that
+// hit the ship is left alone) or the ship's Shots. Whatever calls
+// this owns deciding what happens to the ship (see Game.killPlayer).
 func CheckShipRockCollision(ship *PlayerShip, rocks []*Rock) bool {
-	if ship.Hidden() {
+	if ship.Hidden() || ship.Invulnerable() {
 		return false
 	}
 	for _, r := range rocks {

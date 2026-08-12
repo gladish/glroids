@@ -94,15 +94,9 @@ func NewGame() *Game {
 	audioContext := audio.NewContext(sampleRate)
 	settings := DefaultSettings()
 	shipStart := Point{X: screenWidth / 2, Y: screenHeight / 2}
-	soundManager := NewSoundManager(audioContext)
-	// Sound starts off -- the attract screen tells the player to
-	// press S to turn it on (see the StateAttract case in Draw) --
-	// rather than opening every session with a burst of audio before
-	// they've had any say in it.
-	soundManager.SetMuted(true)
 	return &Game{
 		settings:     settings,
-		soundManager: soundManager,
+		soundManager: NewSoundManager(audioContext),
 		playerShip:   NewPlayerShip(shipStart, settings),
 		// A decorative field, drifting behind the attract screen
 		// until startGame replaces it with wave 1's real field.
@@ -135,7 +129,7 @@ func (g *Game) Update() error {
 	// Advances any in-progress loop fade-outs (see StopLoop).
 	g.soundManager.Update()
 	g.updateDebugKeys()
-	g.updateSoundToggle()
+	g.updateVolumeKeys()
 
 	dt := 1.0 / float64(ebiten.TPS())
 
@@ -176,11 +170,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StateAttract:
 		drawCenteredText(screen, "GLROIDS", 260, titleTextScale, color.White)
 		drawCenteredText(screen, "PRESS ENTER OR TAP TO PLAY", 340, promptTextScale, color.White)
-		soundPrompt := "PRESS S TO TURN SOUND ON"
-		if !g.soundManager.Muted() {
-			soundPrompt = "PRESS S TO TURN SOUND OFF"
-		}
-		drawCenteredText(screen, soundPrompt, 380, promptTextScale, color.White)
+		drawCenteredText(screen, "PRESS 0 TO 9 TO SET VOLUME", 380, promptTextScale, color.White)
+		drawCenteredText(screen, fmt.Sprintf("VOLUME LEVEL %d", g.soundManager.VolumeLevel()), 420, promptTextScale, color.White)
 	case StatePlaying, StateWaveClear, StatePlayerDying:
 		drawLives(screen, g.playerShip, g.lives)
 		drawCenteredText(screen, fmt.Sprintf("SCORE %d", g.score), 30, hudTextScale, color.White)

@@ -82,10 +82,12 @@ type SoundManager struct {
 	oneShots map[SFX]*oneShot
 	loops    map[SFX]*loopVoice
 
-	// muted suppresses every Play/PlayLoop call when true (see
-	// SetMuted). Sounds already playing when it flips on are cut
-	// immediately, not just held back from restarting.
-	muted bool
+	// volumeLevel is the player's chosen master volume step, 0..9
+	// (see SetVolumeLevel) -- 0 is silent, 9 is full volume. Every
+	// voice's player carries this volume directly, so nothing needs
+	// a separate "am I muted" check before playing: a one-shot or
+	// loop triggered at level 0 just plays inaudibly.
+	volumeLevel int
 }
 
 // loopFadeSteps is how many SoundManager.Update() calls a loop's
@@ -173,11 +175,18 @@ func NewSoundManager(ctx *audio.Context) *SoundManager {
 		pcm = trimLoopSilence(pcm)
 		loop := audio.NewInfiniteLoop(bytes.NewReader(pcm), int64(len(pcm)))
 		p, err := ctx.NewPlayer(loop)
+
 		if err != nil {
 			log.Fatalf("sound: build loop player: %v", err)
 		}
 		sm.loops[id] = &loopVoice{player: p, volume: 1}
 	}
+
+	// Starts silent -- the attract screen tells the player to press
+	// 0-9 to set a volume (see the StateAttract case in Draw) rather
+	// than opening every session with a burst of audio before they've
+	// had any say in it.
+	sm.SetVolumeLevel(0)
 
 	return sm
 }
@@ -284,9 +293,6 @@ func decodeToPCM(ctx *audio.Context, raw []byte) []byte {
 // burst bigger than the pool) it steals the oldest one round-robin
 // rather than dropping the sound or allocating a new player.
 func (sm *SoundManager) Play(id SFX) {
-	if sm.muted {
-		return
-	}
 	os, ok := sm.oneShots[id]
 	if !ok {
 		return
@@ -310,9 +316,6 @@ func (sm *SoundManager) Play(id SFX) {
 // the fade and snaps back to full volume without restarting playback,
 // so rapid tap-release-tap doesn't cause a stutter or double-trigger.
 func (sm *SoundManager) PlayLoop(id SFX) {
-	if sm.muted {
-		return
-	}
 	lv, ok := sm.loops[id]
 	if !ok {
 		return
@@ -363,30 +366,34 @@ func (sm *SoundManager) IsLoopPlaying(id SFX) bool {
 	return ok && lv.player.IsPlaying()
 }
 
-// Muted reports whether sound is currently suppressed (see SetMuted).
-func (sm *SoundManager) Muted() bool {
-	return sm.muted
+// VolumeLevel returns the current master volume step, 0..9 (see
+// SetVolumeLevel).
+func (sm *SoundManager) VolumeLevel() int {
+	return sm.volumeLevel
 }
 
-// SetMuted turns all sound on/off. Muting stops every loop that's
-// currently playing immediately -- a deliberate mute is meant to cut
-// sound right away, unlike StopLoop's fade, which exists only to
-// avoid a click when a loop ends naturally mid-waveform. Unmuting
-// doesn't resume anything itself: Play/PlayLoop simply stop being
-// suppressed, so any loop still meant to be playing (thrust held, a
-// saucer on screen, ...) comes back the next tick its owner calls
-// PlayLoop again, same as after any other pause.
-func (sm *SoundManager) SetMuted(m bool) {
-	sm.muted = m
-	if !m {
-		return
+// SetVolumeLevel sets the master volume to level/9 (level is clamped
+// to 0..9) and applies it to every voice -- every pooled one-shot
+// player and every loop, including whatever's already playing -- via
+// the same player.SetVolume each already goes through individually
+// (see SetVolume). 0 is silent, 9 is full volume; a fading-out loop
+// keeps fading at its old volume and picks up the new one once the
+// fade finishes or PlayLoop cancels it, same as SetVolume already
+// does for a single sound.
+func (sm *SoundManager) SetVolumeLevel(level int) {
+	if level < 0 {
+		level = 0
+	} else if level > 9 {
+		level = 9
 	}
-	for _, lv := range sm.loops {
-		lv.fading = 0
-		if lv.player.IsPlaying() {
-			lv.player.Pause()
-			_ = lv.player.Rewind()
-		}
+	sm.volumeLevel = level
+	v := float64(level) / 9
+
+	for id := range sm.oneShots {
+		sm.SetVolume(id, v)
+	}
+	for id := range sm.loops {
+		sm.SetVolume(id, v)
 	}
 }
 

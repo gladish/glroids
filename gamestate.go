@@ -409,23 +409,23 @@ func (g *Game) currentBeatInterval() float64 {
 
 // updateDebugKeys drives the manual sound-test keys. These aren't
 // gameplay, so they stay live in every state rather than being gated
-// by it, unlike the keys in Settings.Keys. (S used to live here too,
-// toggling the saucer loop for testing -- moved to Key5 once S became
-// the player-facing mute toggle, see updateSoundToggle.)
+// by it, unlike the keys in Settings.Keys. Parked on F1-F5 rather
+// than the number row since 0-9 is now the player-facing volume
+// control (see updateVolumeKeys).
 func (g *Game) updateDebugKeys() {
-	if inpututil.IsKeyJustPressed(ebiten.Key1) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF1) {
 		g.soundManager.Play(SFXBangSmall)
 	}
-	if inpututil.IsKeyJustPressed(ebiten.Key2) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF2) {
 		g.soundManager.Play(SFXBangMedium)
 	}
-	if inpututil.IsKeyJustPressed(ebiten.Key3) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF3) {
 		g.soundManager.Play(SFXBangLarge)
 	}
-	if inpututil.IsKeyJustPressed(ebiten.Key4) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF4) {
 		g.soundManager.Play(SFXExtraShip)
 	}
-	if inpututil.IsKeyJustPressed(ebiten.Key5) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF5) {
 		if g.soundManager.IsLoopPlaying(SFXSaucerBigLoop) {
 			g.soundManager.StopLoop(SFXSaucerBigLoop)
 		} else {
@@ -434,13 +434,24 @@ func (g *Game) updateDebugKeys() {
 	}
 }
 
-// updateSoundToggle handles S, the player-facing mute toggle (see
-// SoundManager.SetMuted). Live in every state, not just StateAttract
-// where the prompt is drawn -- muting mid-game shouldn't require a
-// trip back to the title screen.
-func (g *Game) updateSoundToggle() {
-	if inpututil.IsKeyJustPressed(ebiten.KeyS) {
-		g.soundManager.SetMuted(!g.soundManager.Muted())
+// volumeKeys maps each Key0..Key9 to the 0-9 level it sets (see
+// updateVolumeKeys) -- spelled out explicitly rather than derived by
+// arithmetic on ebiten.Key0, since ebiten doesn't guarantee its Key
+// constants are numbered in a way that's safe to offset.
+var volumeKeys = [10]ebiten.Key{
+	ebiten.Key0, ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4,
+	ebiten.Key5, ebiten.Key6, ebiten.Key7, ebiten.Key8, ebiten.Key9,
+}
+
+// updateVolumeKeys handles 0-9, the player-facing volume control (see
+// SoundManager.SetVolumeLevel) -- 0 is silent, 9 is full volume.
+// Live in every state, not just StateAttract where the prompt is
+// drawn, so volume can be adjusted mid-game too.
+func (g *Game) updateVolumeKeys() {
+	for level, key := range volumeKeys {
+		if inpututil.IsKeyJustPressed(key) {
+			g.soundManager.SetVolumeLevel(level)
+		}
 	}
 }
 

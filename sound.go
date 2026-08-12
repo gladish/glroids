@@ -81,6 +81,11 @@ type SoundManager struct {
 	ctx      *audio.Context
 	oneShots map[SFX]*oneShot
 	loops    map[SFX]*loopVoice
+
+	// muted suppresses every Play/PlayLoop call when true (see
+	// SetMuted). Sounds already playing when it flips on are cut
+	// immediately, not just held back from restarting.
+	muted bool
 }
 
 // loopFadeSteps is how many SoundManager.Update() calls a loop's
@@ -279,6 +284,9 @@ func decodeToPCM(ctx *audio.Context, raw []byte) []byte {
 // burst bigger than the pool) it steals the oldest one round-robin
 // rather than dropping the sound or allocating a new player.
 func (sm *SoundManager) Play(id SFX) {
+	if sm.muted {
+		return
+	}
 	os, ok := sm.oneShots[id]
 	if !ok {
 		return
@@ -302,6 +310,9 @@ func (sm *SoundManager) Play(id SFX) {
 // the fade and snaps back to full volume without restarting playback,
 // so rapid tap-release-tap doesn't cause a stutter or double-trigger.
 func (sm *SoundManager) PlayLoop(id SFX) {
+	if sm.muted {
+		return
+	}
 	lv, ok := sm.loops[id]
 	if !ok {
 		return
@@ -350,6 +361,33 @@ func (sm *SoundManager) Update() {
 func (sm *SoundManager) IsLoopPlaying(id SFX) bool {
 	lv, ok := sm.loops[id]
 	return ok && lv.player.IsPlaying()
+}
+
+// Muted reports whether sound is currently suppressed (see SetMuted).
+func (sm *SoundManager) Muted() bool {
+	return sm.muted
+}
+
+// SetMuted turns all sound on/off. Muting stops every loop that's
+// currently playing immediately -- a deliberate mute is meant to cut
+// sound right away, unlike StopLoop's fade, which exists only to
+// avoid a click when a loop ends naturally mid-waveform. Unmuting
+// doesn't resume anything itself: Play/PlayLoop simply stop being
+// suppressed, so any loop still meant to be playing (thrust held, a
+// saucer on screen, ...) comes back the next tick its owner calls
+// PlayLoop again, same as after any other pause.
+func (sm *SoundManager) SetMuted(m bool) {
+	sm.muted = m
+	if !m {
+		return
+	}
+	for _, lv := range sm.loops {
+		lv.fading = 0
+		if lv.player.IsPlaying() {
+			lv.player.Pause()
+			_ = lv.player.Rewind()
+		}
+	}
 }
 
 // SetVolume scales one sound (0..1). For a one-shot this sets every

@@ -409,7 +409,9 @@ func (g *Game) currentBeatInterval() float64 {
 
 // updateDebugKeys drives the manual sound-test keys. These aren't
 // gameplay, so they stay live in every state rather than being gated
-// by it, unlike the keys in Settings.Keys.
+// by it, unlike the keys in Settings.Keys. (S used to live here too,
+// toggling the saucer loop for testing -- moved to Key5 once S became
+// the player-facing mute toggle, see updateSoundToggle.)
 func (g *Game) updateDebugKeys() {
 	if inpututil.IsKeyJustPressed(ebiten.Key1) {
 		g.soundManager.Play(SFXBangSmall)
@@ -423,12 +425,22 @@ func (g *Game) updateDebugKeys() {
 	if inpututil.IsKeyJustPressed(ebiten.Key4) {
 		g.soundManager.Play(SFXExtraShip)
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyS) {
+	if inpututil.IsKeyJustPressed(ebiten.Key5) {
 		if g.soundManager.IsLoopPlaying(SFXSaucerBigLoop) {
 			g.soundManager.StopLoop(SFXSaucerBigLoop)
 		} else {
 			g.soundManager.PlayLoop(SFXSaucerBigLoop)
 		}
+	}
+}
+
+// updateSoundToggle handles S, the player-facing mute toggle (see
+// SoundManager.SetMuted). Live in every state, not just StateAttract
+// where the prompt is drawn -- muting mid-game shouldn't require a
+// trip back to the title screen.
+func (g *Game) updateSoundToggle() {
+	if inpututil.IsKeyJustPressed(ebiten.KeyS) {
+		g.soundManager.SetMuted(!g.soundManager.Muted())
 	}
 }
 

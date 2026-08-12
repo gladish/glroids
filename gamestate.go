@@ -446,10 +446,28 @@ func (g *Game) updateAttract(dt float64) {
 	tapped := touchJustPressed()
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || tapped {
 		if tapped {
-			g.touchControls = true
+			g.enableTouchControls()
 		}
 		g.startGame()
 	}
+}
+
+// enableTouchControls turns the on-screen controls on (see the
+// touchControls field doc) and, the first time it's called, switches
+// the canvas from its default landscape aspect to the narrower
+// touchScreenWidth/Height portrait aspect and relays out the touch
+// buttons to match (see layoutTouchButtons). Safe to call more than
+// once -- only the first call changes anything, matching
+// touchControls' own "set once, stays set" rule.
+func (g *Game) enableTouchControls() {
+	if g.touchControls {
+		return
+	}
+	g.touchControls = true
+	screenWidth = touchScreenWidth
+	screenHeight = touchScreenHeight
+	ebiten.SetWindowSize(int(screenWidth), int(screenHeight))
+	layoutTouchButtons()
 }
 
 // updatePlaying runs normal gameplay: ship/rock/shot simulation,

@@ -10,9 +10,28 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio"
 )
 
-// portrait 4x3
-const screenWidth = 1000
-const screenHeight = 750
+// landscapeScreenWidth/Height is the default canvas, a 4:3 landscape
+// aspect. touchScreenWidth/Height is the narrower 3:4 portrait aspect
+// the canvas switches to the first time a touch is seen (see
+// Game.enableTouchControls) -- friendlier for a phone held upright
+// with the on-screen controls anchored to the bottom.
+const (
+	landscapeScreenWidth  = 1000.0
+	landscapeScreenHeight = 750.0
+	touchScreenWidth      = 750.0
+	touchScreenHeight     = 1000.0
+)
+
+// screenWidth/screenHeight are the canvas's current logical size --
+// every screen-relative calculation in the game (spawn positions,
+// wrapping, HUD placement, Layout) reads these rather than a fixed
+// constant, so the canvas can change aspect ratio at runtime. They
+// start at the landscape default and only ever change once, the
+// first time a touch is seen (see Game.enableTouchControls).
+var (
+	screenWidth  = landscapeScreenWidth
+	screenHeight = landscapeScreenHeight
+)
 
 // startingAsteroids is how many Large rocks spawn at the start of
 // wave 1 (see asteroidsForWave for how later waves scale up from
@@ -172,14 +191,16 @@ func (g *Game) Draw(screen *ebiten.Image) {
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
-	// World space is a fixed screenWidth x screenHeight canvas, matching
+	// World space is a screenWidth x screenHeight canvas, matching
 	// SetWindowSize 1:1 -- one path/position unit is one screen pixel,
-	// no implicit stretch factor to account for.
-	return screenWidth, screenHeight
+	// no implicit stretch factor to account for. Its aspect ratio can
+	// change at runtime (see Game.enableTouchControls), so this reads
+	// the current values rather than a fixed constant.
+	return int(screenWidth), int(screenHeight)
 }
 
 func main() {
-	ebiten.SetWindowSize(screenWidth, screenHeight)
+	ebiten.SetWindowSize(int(screenWidth), int(screenHeight))
 	ebiten.SetWindowTitle("glroids")
 	if err := ebiten.RunGame(NewGame()); err != nil {
 		log.Fatal(err)

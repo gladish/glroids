@@ -29,9 +29,12 @@ type TouchInput struct {
 }
 
 // touchButton is one on-screen control: a circle at Center/Radius
-// (world/screen coordinates -- Layout always reports the fixed
-// screenWidth x screenHeight, so these never need device-pixel
-// conversion) drawn with a single-letter Label.
+// (world/screen coordinates -- Layout always reports the current
+// screenWidth x screenHeight 1:1, so these never need device-pixel
+// conversion) drawn with a single-letter Label. Center is computed by
+// layoutTouchButtons from whatever screenWidth/screenHeight are in
+// effect, so it stays correct across the landscape/touch aspect
+// switch.
 type touchButton struct {
 	Center Point
 	Radius float64
@@ -57,6 +60,21 @@ const (
 )
 
 var (
+	touchTurnLeft   touchButton
+	touchTurnRight  touchButton
+	touchThrust     touchButton
+	touchFire       touchButton
+	touchHyperspace touchButton
+)
+
+// layoutTouchButtons (re)computes every on-screen button's position
+// from the current screenWidth/screenHeight. Run once at package init
+// (for the landscape default) and again by Game.enableTouchControls
+// when the canvas switches to its portrait touch aspect, so the
+// cluster stays anchored to the bottom corners of whichever canvas
+// size is actually in play rather than the landscape layout baked in
+// at startup.
+func layoutTouchButtons() {
 	touchTurnLeft = touchButton{
 		Center: Point{X: touchMarginX, Y: screenHeight - touchMarginBottom},
 		Radius: touchButtonRadius,
@@ -82,7 +100,11 @@ var (
 		Radius: touchHyperRadius,
 		Label:  "H",
 	}
-)
+}
+
+func init() {
+	layoutTouchButtons()
+}
 
 // touchJustPressed reports whether any new touch began this tick --
 // used as a tap-anywhere fallback everywhere Enter currently confirms

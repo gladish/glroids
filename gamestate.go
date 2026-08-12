@@ -433,12 +433,21 @@ func (g *Game) updateDebugKeys() {
 }
 
 // updateAttract drifts the decorative asteroid field shown behind the
-// title screen and waits for Enter to start a fresh game.
+// title screen and waits for Enter (or a tap, on a touchscreen) to
+// start a fresh game. A tap here is also the one-time signal that
+// switches the on-screen controls on for the rest of the session (see
+// TouchInput) -- once g.touchControls is set it stays set, so a
+// hybrid device that later plugs in a keyboard doesn't lose the
+// overlay.
 func (g *Game) updateAttract(dt float64) {
 	for _, a := range g.asteroids {
 		a.Update(dt)
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+	tapped := touchJustPressed()
+	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || tapped {
+		if tapped {
+			g.touchControls = true
+		}
 		g.startGame()
 	}
 }
@@ -447,7 +456,7 @@ func (g *Game) updateAttract(dt float64) {
 // collision handling, the heartbeat, and the transitions out of
 // Playing into StateWaveClear or StatePlayerDying.
 func (g *Game) updatePlaying(dt float64) {
-	g.playerShip.Update(dt)
+	g.playerShip.Update(dt, currentTouchInput())
 	g.checkHyperspaceDeath()
 	if g.state != StatePlaying {
 		// A fatal hyperspace jump just handed off to
@@ -516,7 +525,7 @@ func (g *Game) updatePlaying(dt float64) {
 // during the pause between waves -- only the rocks are gone -- then
 // spawns the next wave once stateTimer runs out.
 func (g *Game) updateWaveClear(dt float64) {
-	g.playerShip.Update(dt)
+	g.playerShip.Update(dt, currentTouchInput())
 	g.checkHyperspaceDeath()
 	if g.state != StateWaveClear {
 		return
@@ -581,7 +590,7 @@ func (g *Game) updateGameOver(dt float64) {
 		a.Update(dt)
 	}
 	g.updateExplosions(dt)
-	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || touchJustPressed() {
 		g.asteroids = spawnAsteroidField(startingAsteroids, g.playerShip.Pos)
 		g.saucer = nil
 		g.soundManager.StopLoop(SFXSaucerBigLoop)

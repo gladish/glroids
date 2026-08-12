@@ -62,6 +62,13 @@ type Game struct {
 	// present.
 	saucer      *Saucer
 	saucerTimer float64
+
+	// touchControls is true once a tap has been seen on the title
+	// screen (see updateAttract) -- it means this session is on a
+	// touchscreen, so Draw keeps the on-screen buttons (see
+	// drawTouchControls) showing for the rest of the run. Never reset
+	// back to false once set.
+	touchControls bool
 }
 
 func NewGame() *Game {
@@ -142,7 +149,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	switch g.state {
 	case StateAttract:
 		drawCenteredText(screen, "GLROIDS", 260, titleTextScale, color.White)
-		drawCenteredText(screen, "PRESS ENTER TO PLAY", 340, promptTextScale, color.White)
+		drawCenteredText(screen, "PRESS ENTER OR TAP TO PLAY", 340, promptTextScale, color.White)
 	case StatePlaying, StateWaveClear, StatePlayerDying:
 		drawLives(screen, g.playerShip, g.lives)
 		drawCenteredText(screen, fmt.Sprintf("SCORE %d", g.score), 30, hudTextScale, color.White)
@@ -152,7 +159,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		drawCenteredText(screen, fmt.Sprintf("SCORE %d", g.score), 30, hudTextScale, color.White)
 		drawText(screen, fmt.Sprintf("WAVE %d", g.wave), screenWidth-170, 30, hudTextScale, color.White)
 		drawCenteredText(screen, "GAME OVER", 300, titleTextScale, color.White)
-		drawCenteredText(screen, "PRESS ENTER TO CONTINUE", 380, promptTextScale, color.White)
+		drawCenteredText(screen, "PRESS ENTER OR TAP TO CONTINUE", 380, promptTextScale, color.White)
+	}
+
+	// The on-screen buttons only mean anything while ship.Update is
+	// actually reading them (see updatePlaying/updateWaveClear) --
+	// drawn here rather than folded into the switch above since both
+	// those states already have their own case.
+	if g.touchControls && (g.state == StatePlaying || g.state == StateWaveClear) {
+		drawTouchControls(screen)
 	}
 }
 

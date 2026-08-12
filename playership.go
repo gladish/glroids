@@ -164,22 +164,25 @@ func (p *PlayerShip) Radius() float64 {
 
 // Update turns the ship while Left/Right is held (stopping the
 // instant it's released), accelerates forward while Up is held, and
-// integrates the resulting motion.
-func (p *PlayerShip) Update(dt float64) {
+// integrates the resulting motion. touch carries this tick's
+// on-screen-button state (see TouchInput) -- its zero value is "no
+// touch input," so this reads identically to before on a device with
+// no touchscreen.
+func (p *PlayerShip) Update(dt float64, touch TouchInput) {
 	p.Fired = false
 	p.Hyperspaced = false
 	p.HyperspaceDestroyed = false
 
 	switch {
-	case ebiten.IsKeyPressed(p.Keys.TurnLeft):
+	case ebiten.IsKeyPressed(p.Keys.TurnLeft) || touch.TurnLeft:
 		p.RotVel = -shipTurnSpeed // counter-clockwise
-	case ebiten.IsKeyPressed(p.Keys.TurnRight):
+	case ebiten.IsKeyPressed(p.Keys.TurnRight) || touch.TurnRight:
 		p.RotVel = shipTurnSpeed // clockwise
 	default:
 		p.RotVel = 0
 	}
 
-	p.Thrusting = ebiten.IsKeyPressed(p.Keys.Thrust)
+	p.Thrusting = ebiten.IsKeyPressed(p.Keys.Thrust) || touch.Thrust
 	if p.Thrusting {
 		p.Vel = p.Vel.Add(p.Forward().Scale(shipThrustAccel * dt))
 		p.thrustTicks++
@@ -217,14 +220,14 @@ func (p *PlayerShip) Update(dt float64) {
 
 	p.updateBullets(dt)
 
-	if inpututil.IsKeyJustPressed(p.Keys.Fire) && len(p.Shots) < maxActiveShots {
+	if (inpututil.IsKeyJustPressed(p.Keys.Fire) || touch.Fire) && len(p.Shots) < maxActiveShots {
 		// WorldPath[0] is the nose vertex (shipPath[0], {0, -14})
 		// already transformed to world space for this tick.
 		p.Shots = append(p.Shots, NewShot(p.WorldPath[0], p.Forward()))
 		p.Fired = true
 	}
 
-	if !p.hyperspacePending && inpututil.IsKeyJustPressed(p.Keys.Hyperspace) {
+	if !p.hyperspacePending && (inpututil.IsKeyJustPressed(p.Keys.Hyperspace) || touch.Hyperspace) {
 		p.startHyperspaceJump()
 	}
 }

@@ -47,7 +47,7 @@ const startingLives = 3
 // maxWaveAsteroids caps how many Large rocks a wave can start with,
 // so the field doesn't grow forever as waves climb -- mirrors the
 // arcade original's plateau (see asteroidsForWave).
-const maxWaveAsteroids = 15
+const maxWaveAsteroids = 22
 
 // waveClearPause is how long the field sits empty -- ship still
 // flying, nothing left to shoot -- before the next wave spawns.

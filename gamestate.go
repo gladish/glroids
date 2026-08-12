@@ -228,8 +228,12 @@ func (g *Game) updateSaucerSpawn(dt float64) {
 // doesn't know), and every kind of collision it's party to except
 // the player's own shots hitting it (that's handled in updatePlaying,
 // alongside the player's shots-vs-rocks collision it's a sibling of).
-// Only called while StatePlaying -- a saucer simply freezes in place,
-// unfired-upon, through any other state, and resumes once play does.
+// Called from both updatePlaying and updateWaveClear -- a saucer that
+// showed up right as the last rock died shouldn't just hang there
+// frozen (still humming) through the wave-clear pause, same as the
+// ship and its shots don't freeze either. It only ever fully stops
+// during StatePlayerDying/StateGameOver/StateAttract, none of which
+// call this.
 func (g *Game) updateSaucer(dt float64) {
 	if g.saucer == nil {
 		return
@@ -515,6 +519,16 @@ func (g *Game) updateWaveClear(dt float64) {
 	g.playerShip.Update(dt)
 	g.checkHyperspaceDeath()
 	if g.state != StateWaveClear {
+		return
+	}
+
+	// A saucer that was already on screen when the wave cleared keeps
+	// flying/firing through the pause -- see updateSaucer's doc
+	// comment. No updateSaucerSpawn here, though: a new one shouldn't
+	// pop in during this brief gap between waves.
+	g.updateSaucer(dt)
+	if g.state != StateWaveClear {
+		// The saucer's shots or its body just killed the player.
 		return
 	}
 

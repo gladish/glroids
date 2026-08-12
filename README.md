@@ -1,5 +1,6 @@
 Asteroids clone in Go
 
+Live (WASM): https://gladish.github.io/glroids/
 
 # WASM Build/Run
 This is powershell syntax. If you're in another shell...

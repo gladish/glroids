@@ -1,4 +1,4 @@
-Asteroids clone in Go
+Asteroids clone in Go (100% AI generated)
 
 Live (WASM): https://gladish.github.io/glroids/
 
